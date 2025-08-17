@@ -3,9 +3,8 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS  # Para permitir requests desde la app Android
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 import uuid
-import json
 
 # Configuración de logging para monitoreo y debugging
 logging.basicConfig(level=logging.INFO)
@@ -19,22 +18,18 @@ CORS(app)
 
 # Configuración de la aplicación desde variables de entorno
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
-app.config['OPENAI_API_KEY'] = os.environ.get('OPENAI_API_KEY', '')
+# 🔑 Ahora solo lee la variable "Clavekey" de Railway
+app.config['OPENAI_API_KEY'] = os.environ.get('Clavekey', '')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Límite de 16MB para uploads
 
-# Diccionario en memoria para almacenar sesiones (en producción usar Redis/DB)
+# Diccionarios en memoria (en producción usar Redis/DB)
 active_sessions = {}
-
-# Diccionario para almacenar contenido pendiente de validación
 pending_validations = {}
 
 @app.route('/ping', methods=['GET'])
 def ping():
-    """
-    Endpoint simple para verificar conectividad
-    Responde inmediatamente para confirmar que el servidor está activo
-    """
-    logger.info("Ping request received")  # Log para monitoreo
+    """Endpoint simple para verificar conectividad"""
+    logger.info("Ping request received")
     return jsonify({
         'status': 'ok',
         'message': 'Server is running',
@@ -43,22 +38,13 @@ def ping():
 
 @app.route('/status', methods=['GET'])
 def status():
-    """
-    Endpoint para verificar el estado de salud del sistema
-    Proporciona información detallada sobre el estado de los servicios
-    """
-    logger.info("Status check requested")  # Log para monitoreo
-    
-    # Verificar estado de OpenAI API key
+    """Endpoint para verificar estado de salud del sistema"""
+    logger.info("Status check requested")
+
     openai_configured = bool(app.config['OPENAI_API_KEY'])
-    
-    # Contar sesiones activas
     active_session_count = len(active_sessions)
-    
-    # Contar validaciones pendientes
     pending_validation_count = len(pending_validations)
-    
-    # Crear respuesta de estado
+
     status_response = {
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
@@ -69,28 +55,21 @@ def status():
         },
         'version': '1.0.0'
     }
-    
     return jsonify(status_response), 200
 
-# Endpoint para crear sesiones
 @app.route('/api/session/create', methods=['POST'])
 def crear_sesion():
-    """
-    Crea una nueva sesión para el usuario
-    """
+    """Crea una nueva sesión para el usuario"""
     try:
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Datos requeridos'}), 400
-        
+
         user_id = data.get('user_id', f'user_{uuid.uuid4().hex[:8]}')
         device_type = data.get('device_type', 'unknown')
         app_version = data.get('app_version', '1.0.0')
-        
-        # Crear ID de sesión único
+
         session_id = str(uuid.uuid4())
-        
-        # Crear sesión con configuración del sistema
         session_data = {
             'id': session_id,
             'user_id': user_id,
@@ -100,33 +79,25 @@ def crear_sesion():
             'last_activity': datetime.now().isoformat(),
             'interaction_count': 0
         }
-        
-        # Almacenar sesión (en producción usar Redis/DB)
+
         active_sessions[session_id] = session_data
-        
         logger.info(f"Nueva sesión creada: {session_id} para usuario {user_id}")
-        
+
         return jsonify({
             'session_id': session_id,
             'status': 'created',
             'message': 'Sesión creada exitosamente',
             'timestamp': datetime.now().isoformat()
         }), 201
-        
+
     except Exception as e:
         logger.error(f"Error creando sesión: {e}")
-        return jsonify({
-            'error': 'Error interno del servidor',
-            'message': str(e)
-        }), 500
+        return jsonify({'error': 'Error interno del servidor', 'message': str(e)}), 500
 
 @app.errorhandler(400)
 def bad_request(error):
-    """
-    Manejador de errores para requests malformados (código 400)
-    Proporciona respuesta JSON consistente para errores de cliente
-    """
-    logger.warning(f"Bad request: {error}")  # Log del error
+    """Manejador de errores 400"""
+    logger.warning(f"Bad request: {error}")
     return jsonify({
         'error': 'Bad Request',
         'message': 'The request data is malformed or invalid',
@@ -135,10 +106,8 @@ def bad_request(error):
 
 @app.errorhandler(404)
 def not_found(error):
-    """
-    Manejador de errores para endpoints no encontrados (código 404)
-    """
-    logger.warning(f"Endpoint not found: {request.url}")  # Log del endpoint no encontrado
+    """Manejador de errores 404"""
+    logger.warning(f"Endpoint not found: {request.url}")
     return jsonify({
         'error': 'Not Found',
         'message': 'The requested endpoint does not exist',
@@ -147,11 +116,8 @@ def not_found(error):
 
 @app.errorhandler(500)
 def internal_error(error):
-    """
-    Manejador de errores internos del servidor (código 500)
-    Registra el error y proporciona respuesta genérica al usuario
-    """
-    logger.error(f"Internal server error: {error}")  # Log del error interno
+    """Manejador de errores 500"""
+    logger.error(f"Internal server error: {error}")
     return jsonify({
         'error': 'Internal Server Error',
         'message': 'An unexpected error occurred. Please try again later.',
@@ -160,33 +126,22 @@ def internal_error(error):
 
 @app.before_request
 def log_request_info():
-    """
-    Middleware que se ejecuta antes de cada request
-    Registra información de la solicitud para monitoreo
-    """
+    """Middleware antes de cada request"""
     logger.info(f"Request: {request.method} {request.url} from {request.remote_addr}")
 
 @app.after_request
 def log_response_info(response):
-    """
-    Middleware que se ejecuta después de cada request
-    Registra información de la respuesta para monitoreo
-    """
+    """Middleware después de cada request"""
     logger.info(f"Response: {response.status_code} for {request.method} {request.url}")
     return response
 
 if __name__ == '__main__':
-    """
-    Punto de entrada principal de la aplicación
-    Configura el servidor para desarrollo o producción según el entorno
-    """
-    # Obtener configuración del entorno
+    """Punto de entrada principal de la aplicación"""
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     port = int(os.environ.get('PORT', 5000))
     host = os.environ.get('HOST', '0.0.0.0')
-    
+
     logger.info(f"Starting OMAR Industrial AI Backend on {host}:{port}")
     logger.info(f"Debug mode: {debug_mode}")
-    
-    # Iniciar el servidor Flask
+
     app.run(host=host, port=port, debug=debug_mode)
